@@ -216,7 +216,7 @@ Nᴀᴍᴇ : {}
 
 Mᴇꜱꜱᴀɢᴇ : <b>{}</b>"""
     
-    CAPTION = """<b><a href="https://t.me/McMoviesKA">{file_name}</a></b>\n\n<b>⚜️ Powered By : <a href="https://t.me/McMoviesKA">[ @McMoviesKA ]</a></b>"""
+    CAPTION = """<b><a href="https://t.me/McMoviesKA">{file_name}</a></b>\n\n<b>⚜️ For More Movies Join Here : <a href="https://t.me/McMoviesKA">[ @McMoviesKA ]</a></b>"""
 
     
     MOVIE_UPDATE_NOTIFY_TXT = """
