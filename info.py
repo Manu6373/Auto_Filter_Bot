@@ -196,7 +196,9 @@ BAD_WORDS = {
     "@nmk_backup7" ,
     "@Kannada_CineHub" ,
     "[MG]" ,
-    "@Kiccha_Creations"
+    "@Kiccha_Creations" ,
+    "@TG_Movies4u" ,
+    "@TG_MOVIES4U"
 } # Set of bad words to filter out
    
 
