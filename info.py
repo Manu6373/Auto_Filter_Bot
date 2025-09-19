@@ -100,22 +100,22 @@ LOG_VR_CHANNEL = int(environ.get('LOG_VR_CHANNEL', '-1003038373976')) #Verificat
 LOG_API_CHANNEL = int(environ.get('LOG_API_CHANNEL', '-1002737688783')) #If Anyone Set Your Bot In Any Group And Set Shortner In That Group Then In This Channel The All Details Come
 VERIFY_IMG = environ.get("VERIFY_IMG", "https://telegra.ph/file/9ecc5d6e4df5b83424896.jpg")
 
-TUTORIAL = environ.get("TUTORIAL", "https://t.me/How_To_0pen_Link")   # Tutorial link for verification
-TUTORIAL_2 = environ.get("TUTORIAL_2", "https://t.me/How_To_0pen_Link")   # Second tutorial link for verification
-TUTORIAL_3 = environ.get("TUTORIAL_3", "https://t.me/How_To_0pen_Link")   # Third tutorial link for verification
+TUTORIAL = environ.get("TUTORIAL", "https://t.me/how_to_verify_the_bot7/9")   # Tutorial link for verification
+TUTORIAL_2 = environ.get("TUTORIAL_2", "https://t.me/how_to_verify_the_bot7/9")   # Second tutorial link for verification
+TUTORIAL_3 = environ.get("TUTORIAL_3", "https://t.me/how_to_verify_the_bot7/9")   # Third tutorial link for verification
 
 # Verification (Must Fill All Veriables. Else You Got Error
-SHORTENER_API = environ.get("SHORTENER_API", "8e3c4cb9cb698c8eb1c8e19f10bb40c494172c86") # Shortener API key
-SHORTENER_WEBSITE = environ.get("SHORTENER_WEBSITE", "shortxlinks.com") # Shortener website
+SHORTENER_API = environ.get("SHORTENER_API", "47b926062d9bb80f6d51b40512c117908d0d6dee") # Shortener API key
+SHORTENER_WEBSITE = environ.get("SHORTENER_WEBSITE", "softurl.in") # Shortener website
 
-SHORTENER_API2 = environ.get("SHORTENER_API2", "8e3c4cb9cb698c8eb1c8e19f10bb40c494172c86")  # Shortener API key for second website
+SHORTENER_API2 = environ.get("SHORTENER_API2", "b67730d46ce281c5efc1dbe3f3d458a534dfc174")  # Shortener API key for second website
 SHORTENER_WEBSITE2 = environ.get("SHORTENER_WEBSITE2", "shortxlinks.com") # Shortener website for second website
 
-SHORTENER_API3 = environ.get("SHORTENER_API3", "8e3c4cb9cb698c8eb1c8e19f10bb40c494172c86")  
-SHORTENER_WEBSITE3 = environ.get("SHORTENER_WEBSITE3", "shortxlinks.com") # Shortener website for third website
+SHORTENER_API3 = environ.get("SHORTENER_API3", "e2f0b44058a4c341c259d731b611c0ed4f60222b")  
+SHORTENER_WEBSITE3 = environ.get("SHORTENER_WEBSITE3", "mdiskshortner.link") # Shortener website for third website
 
-TWO_VERIFY_GAP = int(environ.get('TWO_VERIFY_GAP', "1200")) # Time gap for two-step verification in seconds (default: 20 minutes)
-THREE_VERIFY_GAP = int(environ.get('THREE_VERIFY_GAP', "54000"))    
+TWO_VERIFY_GAP = int(environ.get('TWO_VERIFY_GAP', "1800")) # Time gap for two-step verification in seconds (default: 20 minutes)
+THREE_VERIFY_GAP = int(environ.get('THREE_VERIFY_GAP', "1800"))    
 
 # ============================
 # Channel & Group Links Configuration
