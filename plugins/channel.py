@@ -3,7 +3,7 @@ import logging
 import asyncio
 from datetime import datetime
 from collections import defaultdict
-from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details
+from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details, create_landscape_movie_poster
 from database.users_chats_db import db
 from pyrogram import Client, filters, enums
 from info import CHANNELS, MOVIE_UPDATE_CHANNEL, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER
@@ -255,10 +255,10 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
 
     if not movie_doc:
         if TMDB_POSTER:
-            details = await get_movie_detailsx(base_name)
-            if details.get("error"):
-                error_tmdb=True
-                logger.info("TMDB error switching to IMDB")
+            details = await get_movie_detailsx(base_name) or {}
+            if not details:
+                error_tmdb = True
+                logger.info("TMDB lookup failed; falling back to IMDb")
                 details = await get_movie_details(base_name) or {}
         else:
             details = await get_movie_details(base_name) or {}
@@ -325,7 +325,17 @@ async def send_movie_update(bot, base_name):
             ]])
 
             if movie_doc.get("poster_url") and not LINK_PREVIEW:
-                resized_poster = await fetch_image(movie_doc["poster_url"], size=(2560, 1440) if LANDSCAPE_POSTER and TMDB_POSTER and not error_tmdb else (853, 1280))
+                if LANDSCAPE_POSTER and TMDB_POSTER:
+                    first_file = (movie_doc.get("files") or [{}])[0]
+                    resized_poster = await create_landscape_movie_poster(
+                        movie_doc.get("poster_url"), base_name, movie_doc.get("year"),
+                        movie_doc.get("rating"), movie_doc.get("genres"),
+                        first_file.get("quality"), first_file.get("language")
+                    )
+                else:
+                    resized_poster = await fetch_image(movie_doc["poster_url"], size=(853, 1280))
+                if resized_poster is None:
+                    raise RuntimeError("Could not prepare movie announcement image")
                 msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
                     photo=resized_poster,
@@ -495,4 +505,4 @@ def generate_movie_message(movie_doc, base_name):
         episodes=epi_block,
         rating=movie_doc.get("rating", "N/A"),
         search_link=temp.B_LINK
-    )
+        )
