@@ -135,66 +135,146 @@ async def get_movie_details(query, id=False, file=None):
         return None
 
 async def get_movie_detailsx(query, id=False, file=None):
-    base_url = "https://bharath-boy-api.vercel.app/api/movie-posters"
-    q = str(query).strip()
+    """Fetch movie metadata directly from TMDB API v3."""
+    if not TMDB_API_KEY:
+        logger.error("TMDB_API_KEY is not configured")
+        return None
+    base = "https://api.themoviedb.org/3"
     try:
-        async with aiohttp.ClientSession() as session:
-            params = {"query": q, "api_key": TMDB_API_KEY}
-            async with session.get(base_url, params=params) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    logger.error(f"API request failed [{resp.status}] for query={q}\n {text}")
-                    return await resp.json()
-                
-                data = await resp.json()
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            params = {"api_key": TMDB_API_KEY, "language": "en-US"}
+            if id:
+                url = f"{base}/movie/{query}"
+                params["append_to_response"] = "images,external_ids"
+                params["include_image_language"] = "en,null"
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
+                        logger.error("TMDB details failed: HTTP %s", resp.status)
+                        return None
+                    data = await resp.json()
+            else:
+                title_query = str(query).strip()
+                year_match = re.search(r"\b(19|20)\d{2}\b", title_query)
+                search_params = dict(params, query=re.sub(r"\b(19|20)\d{2}\b", "", title_query).strip())
+                if year_match:
+                    search_params["year"] = year_match.group(0)
+                async with session.get(f"{base}/search/movie", params=search_params) as resp:
+                    if resp.status != 200:
+                        logger.error("TMDB search failed: HTTP %s", resp.status)
+                        return None
+                    results = (await resp.json()).get("results", [])
+                if not results:
+                    return None
+                movie_id = results[0]["id"]
+                detail_params = dict(params, append_to_response="images,external_ids", include_image_language="en,null")
+                async with session.get(f"{base}/movie/{movie_id}", params=detail_params) as resp:
+                    if resp.status != 200:
+                        logger.error("TMDB details failed: HTTP %s", resp.status)
+                        return None
+                    data = await resp.json()
+
+        image_base = "https://image.tmdb.org/t/p/original"
+        backdrop_path = data.get("backdrop_path")
+        poster_path = data.get("poster_path")
+        backdrops = data.get("images", {}).get("backdrops", [])
+        if not backdrop_path and backdrops:
+            backdrop_path = backdrops[0].get("file_path")
+        return {
+            "title": data.get("title") or data.get("original_title"),
+            "year": (data.get("release_date") or "")[:4] or None,
+            "release_date": data.get("release_date"),
+            "rating": round(float(data.get("vote_average") or 0), 1),
+            "votes": data.get("vote_count", 0),
+            "runtime": data.get("runtime"),
+            "genres": [g.get("name") for g in data.get("genres", [])],
+            "languages": [l.get("english_name") for l in data.get("spoken_languages", [])],
+            "countries": [c.get("name") for c in data.get("production_countries", [])],
+            "plot": data.get("overview"),
+            "tagline": data.get("tagline"),
+            "poster_url": image_base + poster_path if poster_path else None,
+            "backdrop_url": image_base + backdrop_path if backdrop_path else (image_base + poster_path if poster_path else None),
+            "tmdb_url": f"https://www.themoviedb.org/movie/{data.get('id')}",
+            "tmdb_id": data.get("id"),
+            "imdb_id": data.get("imdb_id") or data.get("external_ids", {}).get("imdb_id"),
+        }
     except Exception as e:
-        logger.error(f"An error occurred in get_movie_detailsx: {e}")
+        logger.exception("TMDB lookup failed for %s: %s", query, e)
         return None
 
-    # Normalize fields
-    details = {}
-    details['title'] = data.get('title') or data.get('localized_title')
-    details['year'] = (data.get('year', 0)) if data.get('year') else None
-    details['release_date'] = data.get('release_date')
-    details['rating'] = round(float(data.get('rating', 0)), 1) if data.get('rating') is not None else None
-    details['votes'] = int(data.get('votes', 0))
-    details['runtime'] = data.get('runtime')
-    details['certificates'] = data.get('certificates')
-    details['tmdb_url'] = data.get('url')
-    
-    for key in ('genres', 'languages', 'countries'):
-        raw = data.get(key)
-        details[key] = [s.strip() for s in raw.split(',')] if raw else []
-    for role in ('director', 'writer', 'producer', 'composer', 'cinematographer', 'cast'):
-        raw = data.get(role)
-        details[role] = [s.strip() for s in raw.split(',')] if raw else []
-        
-    details['plot'] = data.get('plot')
-    details['tagline'] = data.get('tagline')
-    details['box_office'] = (data.get('box_office', 0)) if data.get('box_office') else None
-    raw_dist = data.get('distributors')
-    details['distributors'] = [d.strip() for d in raw_dist.split(',')] if raw_dist else []
-    details['imdb_id'] = data.get('imdb_id')
-    details['tmdb_id'] = data.get('tmdb_id')
-    
-    posters = data.get('images', {}).get('posters', {})
-    original_language = data.get('images', {}).get('original_language')
-    poster_url = data.get('poster_url')
-    if not poster_url:
-        for key in ('en', original_language, 'no_lang'):
-            if key and posters.get(key):
-                poster_url = posters[key][0]
-                break
-    details['poster_url'] = poster_url
 
-    backdrops = data.get('images', {}).get('backdrops', {})
-    original_language = data.get('images', {}).get('original_language')
-    backdrop_url = None
-    for key in ('en', original_language, 'no_lang'):
-        if key and backdrops.get(key):
-            backdrop_url = backdrops[key][0]
-            break
-    details['backdrop_url'] = backdrop_url
-
-    return details
-
+async def create_landscape_movie_poster(backdrop_url, title, year=None, rating=None,
+                                        genres=None, quality=None, language=None):
+    """Create a 16:9 custom announcement image using a TMDB backdrop."""
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter
+    import os
+    canvas_size = (1280, 720)
+    try:
+        if backdrop_url:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=25)) as session:
+                async with session.get(backdrop_url) as resp:
+                    if resp.status != 200:
+                        raise ValueError(f"Backdrop HTTP {resp.status}")
+                    raw = await resp.read()
+            background = Image.open(BytesIO(raw)).convert("RGB")
+        else:
+            background = Image.new("RGB", canvas_size, (22, 25, 35))
+        # Fill/crop to 16:9, then darken the left side for readable text.
+        w, h = background.size
+        scale = max(canvas_size[0] / w, canvas_size[1] / h)
+        background = background.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        left = (background.width - canvas_size[0]) // 2
+        top = (background.height - canvas_size[1]) // 2
+        background = background.crop((left, top, left + canvas_size[0], top + canvas_size[1])).convert("RGBA")
+        overlay = Image.new("RGBA", canvas_size, (0, 0, 0, 65))
+        draw_overlay = ImageDraw.Draw(overlay)
+        for x in range(850):
+            alpha = int(215 * (1 - x / 850))
+            draw_overlay.line((x, 0, x, 720), fill=(5, 8, 15, alpha))
+        background = Image.alpha_composite(background, overlay)
+        draw = ImageDraw.Draw(background)
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        regular_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        def font(size, bold=False):
+            path = font_path if bold else regular_path
+            try: return ImageFont.truetype(path, size)
+            except Exception: return ImageFont.load_default()
+        # Wrap title to keep it within the text-safe area.
+        title = str(title or "MOVIE UPDATE").upper()
+        title_font = font(64 if len(title) < 22 else 48, True)
+        words, lines, line = title.split(), [], ""
+        for word in words:
+            candidate = (line + " " + word).strip()
+            if draw.textbbox((0, 0), candidate, font=title_font)[2] > 760 and line:
+                lines.append(line); line = word
+            else: line = candidate
+        if line: lines.append(line)
+        y = 285 if len(lines) == 1 else 245
+        for item in lines[:3]:
+            draw.text((64, y), item, font=title_font, fill="white", stroke_width=1, stroke_fill=(0,0,0,120))
+            y += 76
+        meta = []
+        if year: meta.append(str(year))
+        if rating not in (None, "", "N/A", 0, "0"): meta.append(f"★ {rating}/10")
+        if meta:
+            draw.text((68, y + 12), "   •   ".join(meta), font=font(30, True), fill=(255, 215, 120, 255))
+            y += 62
+        if genres:
+            genre_text = ", ".join(genres) if isinstance(genres, (list, tuple)) else str(genres)
+            draw.text((68, y + 12), genre_text[:65], font=font(23), fill="white")
+            y += 48
+        extras = []
+        if quality and quality != "N/A": extras.append(str(quality))
+        if language and language != "N/A": extras.append(str(language))
+        if extras:
+            label = "  |  ".join(extras)[:75]
+            draw.rounded_rectangle((62, min(y + 20, 625), 62 + min(draw.textbbox((0,0), label, font=font(22, True))[2] + 38, 760), min(y + 68, 673)), radius=18, fill=(0,0,0,175))
+            draw.text((80, min(y + 30, 635)), label, font=font(22, True), fill="white")
+        out = BytesIO()
+        background.convert("RGB").save(out, format="JPEG", quality=90, optimize=True)
+        out.seek(0)
+        out.name = "movie_update.jpg"
+        return out
+    except Exception as e:
+        logger.exception("Could not create landscape movie poster: %s", e)
+        return None
