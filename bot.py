@@ -60,6 +60,7 @@ async def dreamxbotz_start():
     temp.BANNED_USERS = b_users
     temp.BANNED_CHATS = b_chats
     await Media.ensure_indexes()
+    await db.ensure_update_channel_indexes()
     if MULTIPLE_DB:
         await Media2.ensure_indexes()
         print("Multiple Database Mode On. Now Files Will Be Save In Second DB If First DB Is Full")
@@ -71,6 +72,14 @@ async def dreamxbotz_start():
     temp.B_NAME = me.first_name
     temp.B_LINK = me.mention
     dreamxbotz.username = '@' + me.username
+    if not await db.get_bot_setting(me.id, 'UPDATE_CHANNELS_MIGRATED', False):
+        if MOVIE_UPDATE_CHANNEL and str(MOVIE_UPDATE_CHANNEL) != "-100" and abs(MOVIE_UPDATE_CHANNEL) > 1000:
+            try:
+                ch = await dreamxbotz.get_chat(MOVIE_UPDATE_CHANNEL)
+                await db.add_update_channel(MOVIE_UPDATE_CHANNEL, ch.title or "")
+            except Exception as e:
+                logging.warning(f"Skipping initial MOVIE_UPDATE_CHANNEL migration ({MOVIE_UPDATE_CHANNEL}): {e}")
+        await db.update_bot_setting(me.id, 'UPDATE_CHANNELS_MIGRATED', True)
     dreamxbotz.loop.create_task(check_expired_premium(dreamxbotz))
     logging.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
     logging.info(LOG_STR)
