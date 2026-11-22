@@ -220,7 +220,7 @@ Mᴇꜱꜱᴀɢᴇ : <b>{}</b>"""
 
     
     MOVIE_UPDATE_NOTIFY_TXT = """
-<b><a href="{poster_url}">📥</a> <a href="{imdb_url}">🎬 Mᴏᴠɪᴇ Uᴘᴅᴀᴛᴇ</a></b>
+<b><a href="{poster_url}">📥</a> <a href="{imdb_url}"> Mᴏᴠɪᴇ Uᴘᴅᴀᴛᴇ</a></b>
 
 <blockquote>🎬 Mᴏᴠɪᴇ : <b>{filename}</b>
 ⭐ Rᴀᴛɪɴɢ : <b>{rating}</b>
