@@ -243,9 +243,9 @@ class Database:
     async def disable_chat(self, chat, reason="No Reason"):
         chat_status = dict(is_disabled=True, reason=reason)
         await self.grp.update_one({'id': int(chat)}, {'$set': {'chat_status': chat_status}})
-        async def total_chat_count(self):
-        return await self.grp.count_documents({})
 
+    async def total_chat_count(self):
+        return await self.grp.count_documents({})
     async def get_all_chats(self):
         return self.grp.find({})
 
