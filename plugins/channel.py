@@ -8,7 +8,7 @@ from collections import defaultdict
 from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details, create_landscape_movie_poster
 from database.users_chats_db import db
 from pyrogram import Client, filters, enums
-from info import CHANNELS, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER
+from info import CHANNELS, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER, MOVIE_UPDATE_CHANNEL
 from Script import script
 from database.ia_filterdb import save_file
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -407,10 +407,11 @@ async def send_movie_update(bot, base_name):
     movie_doc = await db.movie_updates.find_one({"_id": base_name})
     if not movie_doc:
         return None
-    channels = await db.get_all_update_channels()
-    if not channels:
-        logger.info("No Movie Update Channels configured in database.")
+    if MOVIE_UPDATE_CHANNEL == -100:
+        logger.warning("MOVIE_UPDATE_CHANNEL is not configured; movie update skipped.")
         return None
+    await db.add_update_channel(MOVIE_UPDATE_CHANNEL, "Movie Update Channel")
+    channels = [{"channel_id": MOVIE_UPDATE_CHANNEL}]
 
     if not movie_doc.get("short_id"):
         short_id = get_movie_short_id(base_name)
@@ -438,9 +439,11 @@ async def update_movie_message(bot, base_name):
         movie_doc = await db.movie_updates.find_one({"_id": base_name})
         if not movie_doc:
             return
-        channels = await db.get_all_update_channels()
-        if not channels:
+        if MOVIE_UPDATE_CHANNEL == -100:
+            logger.warning("MOVIE_UPDATE_CHANNEL is not configured; movie update edit skipped.")
             return
+        await db.add_update_channel(MOVIE_UPDATE_CHANNEL, "Movie Update Channel")
+        channels = [{"channel_id": MOVIE_UPDATE_CHANNEL}]
 
         if not movie_doc.get("short_id"):
             short_id = get_movie_short_id(base_name)
@@ -598,4 +601,4 @@ def generate_movie_message(movie_doc, base_name):
         episodes=epi_block,
         rating=movie_doc.get("rating", "N/A"),
         search_link=temp.B_LINK
-)
+    )
