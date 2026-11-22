@@ -1852,7 +1852,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
             reply_markup = InlineKeyboardMarkup(buttons)
             await query.message.edit_reply_markup(reply_markup)
     await query.answer(MSG_ALRT)
-    async def auto_filter(client, msg, spoll=False, channel_id=None):
+
+
+async def auto_filter(client, msg, spoll=False, channel_id=None):
     curr_time = datetime.now(pytz.timezone('Asia/Kolkata')).time()
     if not spoll:
         message = msg
