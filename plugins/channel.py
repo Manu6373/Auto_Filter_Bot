@@ -1,18 +1,23 @@
 import re
+import hashlib
 import logging
 import asyncio
+from io import BytesIO
 from datetime import datetime
 from collections import defaultdict
 from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details, create_landscape_movie_poster
 from database.users_chats_db import db
 from pyrogram import Client, filters, enums
-from info import CHANNELS, MOVIE_UPDATE_CHANNEL, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER
+from info import CHANNELS, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER
 from Script import script
 from database.ia_filterdb import save_file
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from utils import temp
 from pymongo.errors import PyMongoError, DuplicateKeyError
-from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
+from pyrogram.errors import (
+    MessageIdInvalid, MessageNotModified, FloodWait,
+    ChatAdminRequired, ChatWriteForbidden, ChannelPrivate, ChannelInvalid, PeerIdInvalid
+)
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -20,20 +25,20 @@ logger = logging.getLogger(__name__)
 # Precomputed sets for faster lookups
 IGNORE_WORDS = {
     "rarbg", "dub", "sub", "sample", "mkv", "aac", "combined",
-    "action", "adventure", "animation", "biography", "comedy", "crime", 
-    "documentary", "drama", "family", "fantasy", "film-noir", "history", 
-    "horror", "music", "musical", "mystery", "romance", "sci-fi", "sport", 
-    "thriller", "war", "western", "hdcam", "hdtc", "camrip", "ts", "tc", 
-    "telesync", "dvdscr", "dvdrip", "predvd", "webrip", "web-dl", "tvrip", 
-    "hdtv", "web dl", "webdl", "bluray", "brrip", "bdrip", "360p", "480p", 
-    "720p", "1080p", "2160p", "4k", "1440p", "540p", "240p", "140p", "hevc", 
-    "hdrip", "hin", "hindi", "tam", "tamil", "kan", "kannada", "tel", "telugu", 
-    "mal", "malayalam", "eng", "english", "pun", "punjabi", "ben", "bengali", 
-    "mar", "marathi", "guj", "gujarati", "urd", "urdu", "kor", "korean", "jpn", 
-    "japanese", "nf", "netflix", "sonyliv", "sony", "sliv", "amzn", "prime", 
-    "primevideo", "hotstar", "zee5", "jio", "jhs", "aha", "hbo", "paramount", 
+    "action", "adventure", "animation", "biography", "comedy", "crime",
+    "documentary", "drama", "family", "fantasy", "film-noir", "history",
+    "horror", "music", "musical", "mystery", "romance", "sci-fi", "sport",
+    "thriller", "war", "western", "hdcam", "hdtc", "camrip", "ts", "tc",
+    "telesync", "dvdscr", "dvdrip", "predvd", "webrip", "web-dl", "tvrip",
+    "hdtv", "web dl", "webdl", "bluray", "brrip", "bdrip", "360p", "480p",
+    "720p", "1080p", "2160p", "4k", "1440p", "540p", "240p", "140p", "hevc",
+    "hdrip", "hin", "hindi", "tam", "tamil", "kan", "kannada", "tel", "telugu",
+    "mal", "malayalam", "eng", "english", "pun", "punjabi", "ben", "bengali",
+    "mar", "marathi", "guj", "gujarati", "urd", "urdu", "kor", "korean", "jpn",
+    "japanese", "nf", "netflix", "sonyliv", "sony", "sliv", "amzn", "prime",
+    "primevideo", "hotstar", "zee5", "jio", "jhs", "aha", "hbo", "paramount",
     "apple", "hoichoi", "sunnxt", "viki"
-}|BAD_WORDS
+} | BAD_WORDS
 
 # Constants
 CAPTION_LANGUAGES = {
@@ -74,14 +79,14 @@ NORMALIZE_PATTERN = re.compile(r"[._]+|[()\[\]{}:;'–!,.?_]")
 QUALITY_PATTERN = re.compile(
     r"\b(?:HDCam|HDTC|CamRip|TS|TC|TeleSync|DVDScr|DVDRip|PreDVD|"
     r"WEBRip|WEB-DL|TVRip|HDTV|WEB DL|WebDl|BluRay|BRRip|BDRip|"
-    r"360p|480p|720p|1080p|2160p|4K|1440p|540p|240p|140p|HEVC|HDRip)\b", 
+    r"360p|480p|720p|1080p|2160p|4K|1440p|540p|240p|140p|HEVC|HDRip)\b",
     re.IGNORECASE
 )
 YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(?:19|20)\d{2}(?![A-Za-z0-9])")
-RANGE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,2})\s*(?:to|-)\s*(?:E(?:p(?:isode)?)?)?0*(\d{1,2})',re.IGNORECASE)
+RANGE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,2})\s*(?:to|-)\s*(?:E(?:p(?:isode)?)?)?0*(\d{1,2})', re.IGNORECASE)
 SINGLE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,3})', re.IGNORECASE)
 NAMED_REGEX = re.compile(r'Season\s*0*(\d{1,2})[\s\-,:]*Ep(?:isode)?\s*0*(\d{1,3})', re.IGNORECASE)
-EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b',re.IGNORECASE)
+EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b', re.IGNORECASE)
 
 
 MEDIA_FILTER = filters.document | filters.video | filters.audio
@@ -92,22 +97,27 @@ pending_updates = {}
 def clean_mentions_links(text: str) -> str:
     return CLEAN_PATTERN.sub("", text or "").strip()
 
+
 def normalize(s: str) -> str:
     s = NORMALIZE_PATTERN.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
+
 
 def remove_ignored_words(text: str) -> str:
     IGNORE_WORDS_LOWER = {w.lower() for w in IGNORE_WORDS}
     return " ".join(word for word in text.split() if word.lower() not in IGNORE_WORDS_LOWER)
 
+
 def get_qualities(text: str) -> str:
     qualities = QUALITY_PATTERN.findall(text)
     return ", ".join(qualities) if qualities else "N/A"
+
 
 def extract_ott_platform(text: str) -> str:
     text = text.lower()
     platforms = {plat for key, plat in OTT_PLATFORMS.items() if key in text}
     return " | ".join(platforms) if platforms else "N/A"
+
 
 def extract_season_episode(filename: str) -> Tuple[Optional[int], Optional[str]]:
     if m := EP_ONLY_RANGE.search(filename):
@@ -122,16 +132,18 @@ def extract_season_episode(filename: str) -> Tuple[Optional[int], Optional[str]]
             return season, ep
     return None, None
 
+
 def schedule_update(bot, base_name, delay=5):
     if handle := pending_updates.get(base_name):
         if not handle.cancelled():
             handle.cancel()
-    
+
     loop = asyncio.get_event_loop()
     pending_updates[base_name] = loop.call_later(
         delay,
         lambda: asyncio.create_task(update_movie_message(bot, base_name))
     )
+
 
 def extract_media_info(filename: str, caption: str):
     filename = normalize(clean_mentions_links(filename).title())
@@ -160,7 +172,7 @@ def extract_media_info(filename: str, caption: str):
                 y = year_match.group(0)
                 yi = filename.lower().find(y, end_idx)
                 if yi != -1:
-                    processed_raw = filename[:yi+4]
+                    processed_raw = filename[:yi + 4]
                     base_raw += f" {y}"
     else:
         if year_match := YEAR_PATTERN.search(unified):
@@ -198,6 +210,7 @@ def extract_media_info(filename: str, caption: str):
         "language": language
     }
 
+
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     media = next(
@@ -220,6 +233,7 @@ async def media_handler(bot, message):
     except Exception:
         logger.exception("Error processing media")
 
+
 async def process_and_send_update(bot, filename, caption):
     try:
         media_info = extract_media_info(filename, caption)
@@ -234,13 +248,47 @@ async def process_and_send_update(bot, filename, caption):
     except Exception as e:
         logger.exception("Processing failed: %s", e)
 
+
+def get_movie_short_id(base_name: str) -> str:
+    return hashlib.sha256(base_name.encode("utf-8")).hexdigest()[:12]
+
+
+def _build_get_files_markup(channel_id: int, short_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            'ɢᴇᴛ ғɪʟᴇs',
+            url=f"https://t.me/{temp.U_NAME}?start=gf_{channel_id}_{short_id}"
+        )
+    ]])
+
+
+async def _prepare_poster_bytes(movie_doc: dict, base_name: str) -> Optional[bytes]:
+    if not movie_doc.get("poster_url") or LINK_PREVIEW:
+        return None
+    if LANDSCAPE_POSTER and TMDB_POSTER:
+        first_file = (movie_doc.get("files") or [{}])[0]
+        buf = await create_landscape_movie_poster(
+            movie_doc.get("poster_url"),
+            base_name,
+            movie_doc.get("year"),
+            movie_doc.get("rating"),
+            movie_doc.get("genres"),
+            first_file.get("quality"),
+            first_file.get("language"),
+        )
+    else:
+        buf = await fetch_image(movie_doc["poster_url"], size=(853, 1280))
+    if buf is None:
+        return None
+    return buf.getvalue()
+
+
 async def _process_with_lock(bot, filename, caption, media_info, base_name, processed):
     if not hasattr(db, 'movie_updates'):
         db.movie_updates = db.db.movie_updates
 
     movie_doc = await db.movie_updates.find_one({"_id": base_name})
-    global error_tmdb
-    error_tmdb=False
+    error_tmdb = False
     file_data = {
         "filename": filename,
         "processed": processed,
@@ -269,23 +317,23 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             genres = ", ".join(g for g in genre_list if g in STANDARD_GENRES) or "N/A"
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
+        short_id = get_movie_short_id(base_name)
         movie_doc = {
             "_id": base_name,
+            "short_id": short_id,
             "files": [file_data],
             "poster_url": details.get("backdrop_url") if LANDSCAPE_POSTER and TMDB_POSTER and not error_tmdb else details.get("poster_url"),
             "genres": genres,
             "rating": details.get("rating", "N/A"),
-            "imdb_url": details.get("url", "")if not TMDB_POSTER else details.get("tmdb_url"),
+            "imdb_url": details.get("url", "") if not TMDB_POSTER else details.get("tmdb_url"),
             "year": media_info["year"] or details.get("year"),
             "tag": media_info["tag"],
             "ott_platform": media_info["ott_platform"],
-            "message_id": None,
-            "is_photo": False
+            "channel_messages": {},
         }
         try:
             await db.movie_updates.insert_one(movie_doc)
             await send_movie_update(bot, base_name)
-            movie_doc = await db.movie_updates.find_one({"_id": base_name})
         except DuplicateKeyError:
             movie_doc = await db.movie_updates.find_one({"_id": base_name})
             if movie_doc:
@@ -295,50 +343,33 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
                     {"_id": base_name},
                     {"$push": {"files": file_data}}
                 )
-                movie_doc["files"].append(file_data)
                 schedule_update(bot, base_name)
     else:
         if any(f["filename"] == filename for f in movie_doc["files"]):
             return
-        await db.movie_updates.update_one(
-            {"_id": base_name},
-            {"$push": {"files": file_data}}
-        )
-        movie_doc["files"].append(file_data)
+        update_fields = {}
+        if not movie_doc.get("short_id"):
+            update_fields["short_id"] = get_movie_short_id(base_name)
+        update_ops = {"$push": {"files": file_data}}
+        if update_fields:
+            update_ops["$set"] = update_fields
+        await db.movie_updates.update_one({"_id": base_name}, update_ops)
         schedule_update(bot, base_name)
 
-async def send_movie_update(bot, base_name):
+
+async def _send_to_single_channel(bot, channel_id: int, movie_doc: dict, base_name: str, text: str, poster_bytes: Optional[bytes]):
+    short_id = movie_doc.get("short_id") or get_movie_short_id(base_name)
+    buttons = _build_get_files_markup(channel_id, short_id)
     max_retries = 3
-    base_delay = 5
+
     for attempt in range(max_retries):
         try:
-            movie_doc = await db.movie_updates.find_one({"_id": base_name})
-            if not movie_doc:
-                return None
-
-            text = generate_movie_message(movie_doc, base_name)
-            buttons = InlineKeyboardMarkup([[
-                InlineKeyboardButton(
-                    'ɢᴇᴛ ғɪʟᴇs',
-                    url=f"https://t.me/{temp.U_NAME}?start=getfile-{base_name.replace(' ', '-')}"
-                )
-            ]])
-
-            if movie_doc.get("poster_url") and not LINK_PREVIEW:
-                if LANDSCAPE_POSTER and TMDB_POSTER:
-                    first_file = (movie_doc.get("files") or [{}])[0]
-                    resized_poster = await create_landscape_movie_poster(
-                        movie_doc.get("poster_url"), base_name, movie_doc.get("year"),
-                        movie_doc.get("rating"), movie_doc.get("genres"),
-                        first_file.get("quality"), first_file.get("language")
-                    )
-                else:
-                    resized_poster = await fetch_image(movie_doc["poster_url"], size=(853, 1280))
-                if resized_poster is None:
-                    raise RuntimeError("Could not prepare movie announcement image")
+            if poster_bytes and not LINK_PREVIEW:
+                photo_buf = BytesIO(poster_bytes)
+                photo_buf.name = "movie_update.jpg"
                 msg = await bot.send_photo(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    photo=resized_poster,
+                    chat_id=channel_id,
+                    photo=photo_buf,
                     caption=text,
                     reply_markup=buttons,
                     parse_mode=enums.ParseMode.HTML
@@ -346,7 +377,7 @@ async def send_movie_update(bot, base_name):
                 is_photo = True
             else:
                 send_params = {
-                    "chat_id": MOVIE_UPDATE_CHANNEL,
+                    "chat_id": channel_id,
                     "text": text,
                     "reply_markup": buttons,
                     "parse_mode": enums.ParseMode.HTML
@@ -358,75 +389,137 @@ async def send_movie_update(bot, base_name):
 
             await db.movie_updates.update_one(
                 {"_id": base_name},
-                {"$set": {"message_id": msg.id, "is_photo": is_photo}}
+                {"$set": {f"channel_messages.{channel_id}": {"message_id": msg.id, "is_photo": is_photo}}}
             )
             return msg
         except FloodWait as e:
-            wait_time = e.value + 2
-            await asyncio.sleep(wait_time)
+            await asyncio.sleep(e.value + 2)
+        except (ChatAdminRequired, ChatWriteForbidden, ChannelPrivate, ChannelInvalid, PeerIdInvalid) as e:
+            logger.error(f"Cannot post movie update to channel {channel_id} (permissions/invalid channel): {e}")
+            break
         except Exception as e:
-            logger.error(f"Failed to send movie update: {e}")
+            logger.error(f"Failed to send movie update to channel {channel_id}: {e}")
             break
     return None
+
+
+async def send_movie_update(bot, base_name):
+    movie_doc = await db.movie_updates.find_one({"_id": base_name})
+    if not movie_doc:
+        return None
+    channels = await db.get_all_update_channels()
+    if not channels:
+        logger.info("No Movie Update Channels configured in database.")
+        return None
+
+    if not movie_doc.get("short_id"):
+        short_id = get_movie_short_id(base_name)
+        await db.movie_updates.update_one({"_id": base_name}, {"$set": {"short_id": short_id}})
+        movie_doc["short_id"] = short_id
+
+    text = generate_movie_message(movie_doc, base_name)
+    poster_bytes = None
+    try:
+        poster_bytes = await _prepare_poster_bytes(movie_doc, base_name)
+    except Exception as e:
+        logger.error(f"Failed preparing poster for {base_name}: {e}")
+
+    if movie_doc.get("poster_url") and not LINK_PREVIEW and poster_bytes is None:
+        logger.warning(f"Could not prepare movie announcement image for {base_name}; skipping photo.")
+        return None
+
+    for ch in channels:
+        channel_id = int(ch["channel_id"])
+        await _send_to_single_channel(bot, channel_id, movie_doc, base_name, text, poster_bytes)
+
 
 async def update_movie_message(bot, base_name):
     try:
         movie_doc = await db.movie_updates.find_one({"_id": base_name})
         if not movie_doc:
             return
+        channels = await db.get_all_update_channels()
+        if not channels:
+            return
 
+        if not movie_doc.get("short_id"):
+            short_id = get_movie_short_id(base_name)
+            await db.movie_updates.update_one({"_id": base_name}, {"$set": {"short_id": short_id}})
+            movie_doc["short_id"] = short_id
+
+        short_id = movie_doc["short_id"]
         text = generate_movie_message(movie_doc, base_name)
-        buttons = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                'ɢᴇᴛ ғɪʟᴇs',
-                url=f"https://t.me/{temp.U_NAME}?start=getfile-{base_name.replace(' ', '-')}"
-            )
-        ]])
+        channel_messages = movie_doc.get("channel_messages", {})
+        poster_bytes = None
+        poster_prepared = False
 
-        message_id = movie_doc.get("message_id")
-        is_photo = movie_doc.get("is_photo", False)
+        for ch in channels:
+            channel_id = int(ch["channel_id"])
+            buttons = _build_get_files_markup(channel_id, short_id)
+            msg_info = channel_messages.get(str(channel_id))
 
-        if not message_id:
-            await send_movie_update(bot, base_name)
-            return
+            if not msg_info or not msg_info.get("message_id"):
+                if not poster_prepared:
+                    poster_bytes = await _prepare_poster_bytes(movie_doc, base_name)
+                    poster_prepared = True
+                if movie_doc.get("poster_url") and not LINK_PREVIEW and poster_bytes is None:
+                    continue
+                await _send_to_single_channel(bot, channel_id, movie_doc, base_name, text, poster_bytes)
+                continue
 
-        try:
-            if is_photo:
-                await bot.edit_message_caption(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    message_id=message_id,
-                    caption=text,
-                    reply_markup=buttons,
-                    parse_mode=enums.ParseMode.HTML
-                )
-            else:
-                await bot.edit_message_text(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    message_id=message_id,
-                    text=text,
-                    reply_markup=buttons,
-                    parse_mode=enums.ParseMode.HTML,
-                    invert_media=ABOVE_PREVIEW,
-                    disable_web_page_preview=not LINK_PREVIEW
-                )
-            return
-        except (MessageIdInvalid, MessageNotModified):
-            pass
-        except Exception:
+            message_id = msg_info["message_id"]
+            is_photo = msg_info.get("is_photo", False)
+
             try:
-                await bot.delete_messages(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    message_ids=message_id
-                )
+                if is_photo:
+                    await bot.edit_message_caption(
+                        chat_id=channel_id,
+                        message_id=message_id,
+                        caption=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                else:
+                    await bot.edit_message_text(
+                        chat_id=channel_id,
+                        message_id=message_id,
+                        text=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML,
+                        invert_media=ABOVE_PREVIEW,
+                        disable_web_page_preview=not LINK_PREVIEW
+                    )
+            except MessageNotModified:
+                continue
+            except (ChatAdminRequired, ChatWriteForbidden, ChannelPrivate, ChannelInvalid, PeerIdInvalid) as e:
+                logger.error(f"Cannot edit movie update in channel {channel_id}: {e}")
+                continue
+            except MessageIdInvalid:
+                if not poster_prepared:
+                    poster_bytes = await _prepare_poster_bytes(movie_doc, base_name)
+                    poster_prepared = True
+                if movie_doc.get("poster_url") and not LINK_PREVIEW and poster_bytes is None:
+                    continue
+                await _send_to_single_channel(bot, channel_id, movie_doc, base_name, text, poster_bytes)
+            except Exception as e:
+                logger.warning(f"Edit failed in channel {channel_id} ({e}); reposting.")
+                try:
+                    await bot.delete_messages(chat_id=channel_id, message_ids=message_id)
+                except Exception:
+                    pass
                 await db.movie_updates.update_one(
                     {"_id": base_name},
-                    {"$set": {"message_id": None, "is_photo": False}}
+                    {"$unset": {f"channel_messages.{channel_id}": ""}}
                 )
-            except Exception:
-                pass
-            await send_movie_update(bot, base_name)
+                if not poster_prepared:
+                    poster_bytes = await _prepare_poster_bytes(movie_doc, base_name)
+                    poster_prepared = True
+                if movie_doc.get("poster_url") and not LINK_PREVIEW and poster_bytes is None:
+                    continue
+                await _send_to_single_channel(bot, channel_id, movie_doc, base_name, text, poster_bytes)
     except Exception as e:
         logger.error(f"Failed to update movie message: {e}")
+
 
 def generate_movie_message(movie_doc, base_name):
     all_qualities = set()
@@ -505,4 +598,4 @@ def generate_movie_message(movie_doc, base_name):
         episodes=epi_block,
         rating=movie_doc.get("rating", "N/A"),
         search_link=temp.B_LINK
-        )
+)
