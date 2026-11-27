@@ -193,7 +193,8 @@ class Database:
         if chat and 'settings' in chat:
             saved = chat['settings']
             res = default.copy()
-            res.update(saved)
+            res.update({k: v for k, v in saved.items()
+                        if k in default or k in ('custom_shortner', 'custom_shortner_two', 'custom_shortner_three')})
             if not saved.get('custom_shortner'):
                 res['shortner'] = SHORTENER_WEBSITE
                 res['api'] = SHORTENER_API
