@@ -6,6 +6,7 @@ import random
 import asyncio
 import string
 import sys
+from urllib.parse import unquote
 from .pmfilter import auto_filter 
 from Script import script
 from datetime import datetime, timedelta
@@ -66,7 +67,12 @@ async def start(client, message):
                 msg = script.THIRDT_VERIFY_COMPLETE_TEXT
             else:
                 msg = script.SECOND_VERIFY_COMPLETE_TEXT if key == "second_time_verified" else script.VERIFY_COMPLETE_TEXT
-            if message.command[1].startswith('sendall'):
+            if file_id.startswith('gf'):
+                pending = temp.GETFILE.get(user_id)
+                if not pending:
+                    return await message.reply(script.LINK_EXPIRED_TXT)
+                verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=getfile-{pending[0]}-{pending[1]}"
+            elif message.command[1].startswith('sendall'):
                 verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=allfiles_{grp_id}_{file_id}"
             else:
                 verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=file_{grp_id}_{file_id}"
@@ -249,13 +255,63 @@ async def start(client, message):
             return  
 
         if len(message.command) == 2 and message.command[1].startswith('getfile'):
-            movies = message.command[1].split("-", 1)[1] 
-            movie = movies.replace('-',' ')
-            message.text = movie 
-            await auto_filter(client, message)
+            parts = message.command[1].split("-", 2)
+            if len(parts) == 3 and parts[1].isdigit():
+                settings_grp, payload = int(parts[1]), parts[2]
+            else:
+                settings_grp, payload = 0, message.command[1].split("-", 1)[1]
+            movie = unquote(payload) if "%" in payload else payload.replace("-", " ")
+
+            user_id = message.from_user.id
+            if not await db.has_premium_access(user_id):
+                try:
+                    settings = await get_settings(settings_grp)
+                    if settings.get("is_verify", IS_VERIFY):
+                        user_verified, is_second_shortener, is_third_shortener = await asyncio.gather(
+                            db.is_user_verified(user_id),
+                            db.use_second_shortener(user_id, settings.get('verify_time', TWO_VERIFY_GAP)),
+                            db.use_third_shortener(user_id, settings.get('third_verify_time', THREE_VERIFY_GAP))
+                        )
+                        if not user_verified or is_second_shortener or is_third_shortener:
+                            verify_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=7))
+                            await db.create_verify_id(user_id, verify_id)
+                            temp.VERIFICATIONS[user_id] = settings_grp
+                            temp.GETFILE[user_id] = (settings_grp, payload)
+                            verify = await get_shortlink(
+                                f"https://telegram.me/{temp.U_NAME}?start=notcopy_{user_id}_{verify_id}_gf{user_id}",
+                                settings_grp, is_second_shortener, is_third_shortener
+                            )
+                            if is_third_shortener:
+                                howtodownload = settings.get('tutorial_3', TUTORIAL_3)
+                            else:
+                                howtodownload = settings.get('tutorial_2', TUTORIAL_2) if is_second_shortener else settings.get('tutorial', TUTORIAL)
+                            buttons = [[
+                                InlineKeyboardButton(text="♻️ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪꜰʏ ♻️", url=verify)
+                            ], [
+                                InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
+                            ]]
+                            if await db.user_verified(user_id):
+                                msg = script.THIRDT_VERIFICATION_TEXT
+                            else:
+                                msg = script.SECOND_VERIFICATION_TEXT if is_second_shortener else script.VERIFICATION_TEXT
+                            n = await message.reply_text(
+                                text=msg.format(message.from_user.mention),
+                                protect_content=True,
+                                reply_markup=InlineKeyboardMarkup(buttons),
+                                parse_mode=enums.ParseMode.HTML
+                            )
+                            await asyncio.sleep(300)
+                            await n.delete()
+                            return
+                except Exception as e:
+                    logger.error("Error In Getfile Verification: %s", e)
+
+            await auto_filter(client, message, query_text=movie, settings_grp=settings_grp)
             raise StopPropagation
 
         data = message.command[1]
+        if data.startswith(("sendfiles3_", "sendfiles4_")):
+            data = "allfiles_0_" + data.split("_", 1)[1]
         try:
             _, grp_id, file_id = data.split("_", 2)
             grp_id = int(grp_id)
@@ -336,7 +392,7 @@ async def start(client, message):
                             howtodownload = settings.get('tutorial_2', TUTORIAL_2) if is_second_shortener else settings.get('tutorial', TUTORIAL)
                         buttons = [[
                             InlineKeyboardButton(text="♻️ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪꜰʏ ♻️", url=verify)
-                        ],[
+                        ], [
                             InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
                         ]]
                         reply_markup=InlineKeyboardMarkup(buttons)
@@ -684,7 +740,7 @@ async def settings(client, message):
         await db.connect_group(grp_id, user_id)
         btn = [[
                 InlineKeyboardButton("👤 ᴏᴘᴇɴ ɪɴ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ 👤", callback_data=f"opnsetpm#{grp_id}")
-              ],[
+              ],\[
                 InlineKeyboardButton("👥 ᴏᴘᴇɴ ʜᴇʀᴇ 👥", callback_data=f"opnsetgrp#{grp_id}")
               ]]
         await message.reply_text(
@@ -875,7 +931,7 @@ async def deletemultiplefiles(client, message):
     await k.delete()
     btn = [[
        InlineKeyboardButton("⚠️ Yes, Continue ! ⚠️", callback_data=f"killfilesdq#{keyword}")
-       ],[
+       ],[\
        InlineKeyboardButton("❌ No, Abort operation ! ❌", callback_data="close_data", style=enums.ButtonStyle.DANGER)
     ]]
     await message.reply_text(
@@ -987,7 +1043,7 @@ async def trendlist(client, message):
         "𝒘𝒊𝒕𝒉𝒐𝒖𝒕 𝒂𝒏𝒚 𝒄𝒉𝒂𝒏𝒈𝒆𝒔 𝒃𝒚 𝒕𝒉𝒆 𝒐𝒘𝒏𝒆𝒓."
     )
     formatted_list += f"\n\n{additional_message}"
-    reply_text = f"<b>Top {len(truncated_messages)} Tʀᴀɴᴅɪɴɢ ᴏғ ᴛʜᴇ ᴅᴀʏ 👇:</b>\n\n{formatted_list}"
+    reply_text = f"<b>Top {len(truncated_messages)} Tʀᴀɴᴀɴᴅɪɴɢ ᴏғ ᴛʜᴇ ᴅᴀʏ 👇:</b>\n\n{formatted_list}"
     await message.reply_text(reply_text)
 
 @Client.on_message(filters.private & filters.command("pm_search") & filters.user(ADMINS))
@@ -1058,7 +1114,7 @@ async def confirmation_handler(client, callback_query):
     action = callback_query.data.split("_")[-1]
     if action == "yes":
         await db.delete_all_msg()
-        await callback_query.message.edit_text('🧹 ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ ʟɪsᴛ ʜᴀs ʙᴇᴇɴ ᴄʟᴇᴀʀᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅')
+        await callback_query.message.edit_text('🧹 ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ ʟɪsᴛ ʜᴀꜱ ʙᴇᴇɴ ᴄʟᴇᴀʀᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅')
     elif action == "no":
         await callback_query.message.delete()
     await callback_query.answer()
@@ -1328,12 +1384,12 @@ async def verify(client, message):
             command_text = message.text.split(' ')[1] if len(message.text.split(' ')) > 1 else None
             if command_text == "off":
                 await save_group_settings(grpid, 'is_verify', False)
-                return await message.reply_text("✓ ᴠᴇʀɪꜰʏ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅɪsᴀʙʟᴇᴅ.")
+                return await message.reply_text("✓ ᴠᴇʀɪꜰʏ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅɪꜱᴀʙʟᴇᴅ.")
             elif command_text == "on":
                 await save_group_settings(grpid, 'is_verify', True)
                 return await message.reply_text("✗ ᴠᴇʀɪꜰʏ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴇɴᴀʙʟᴇᴅ.")
             else:
-                return await message.reply_text("ʜɪ, ᴛᴏ ᴇɴᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify on</code> ᴀɴᴅ ᴛᴏ ᴅɪsᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify off</code>.")
+                return await message.reply_text("ʜɪ, ᴛᴏ ᴇɴᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify on</code> ᴀɴᴅ ᴛᴏ ᴅɪꜱᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify off</code>.")
     except Exception as e:
         logger.error("Error: %s", e)
         await message.reply_text(f"Error: {e}")
@@ -1395,7 +1451,7 @@ async def reset_all_settings(client, message):
     try:
         reset_count = await db.dreamx_reset_settings()
         await message.reply_text(
-            f"<b>ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ꜱᴇᴛᴛɪɴɢꜱ ꜰᴏʀ  <code>{reset_count}</code> ɢʀᴏᴜᴘꜱ. ᴅᴇꜰᴀᴜʟᴛ ᴠᴀʟᴜᴇꜱ ᴡɪʟʟ ʙᴇ ᴜꜱᴇᴅ ✅</b>"
+            f"<b>ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ꜱᴇᴛᴛɪɴɢꜱ ꜰᴏʀ  <code>{reset_count}</code> ɢʀᴏᴜᴘꜱ. ᴅᴇꜰᴀᴜʟᴛ ᴠᴀʟᴜᴇꜱ ᴡɪʟʟ ʙᴇ ᴜsᴇᴅ ✅</b>"
         )
     except Exception as e:
         logger.error("reset_all_settings: %s", e)
