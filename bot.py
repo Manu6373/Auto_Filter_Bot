@@ -1,18 +1,17 @@
-import sys
-import glob
-import importlib
-from pathlib import Path
-from pyrogram import Client, idle, __version__
+import plugins.listener  # noqa: F401
+import logging
+import logging.config
+from pyrogram import idle, __version__
 from pyrogram.raw.all import layer
 import time
 from pyrogram.errors import FloodWait
 import asyncio
 from datetime import date, datetime
-import pytz
+from pathlib import Path
 from aiohttp import web
 from database.ia_filterdb import Media, Media2
 from database.users_chats_db import db
-from info import *
+from info import MULTIPLE_DB, ON_HEROKU, LOG_STR, LOG_CHANNEL, PORT, TIMEZONE, TZ
 from utils import temp
 from Script import script
 from plugins import web_server, check_expired_premium, keep_alive
@@ -20,11 +19,10 @@ from dreamxbotz.Bot import dreamxbotz
 from dreamxbotz.util.keepalive import ping_server
 from dreamxbotz.Bot.clients import initialize_clients
 from PIL import Image
+
 Image.MAX_IMAGE_PIXELS = 500_000_000
 
-import logging
-import logging.config
-
+logger = logging.getLogger(__name__)
 logging.config.fileConfig('logging.conf')
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
@@ -33,78 +31,86 @@ logging.getLogger("aiohttp").setLevel(logging.ERROR)
 logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
+try:
+    import uvloop
+    uvloop.install()
+    logger.info("uvloop installed as event-loop policy.")
+except ImportError:
+    pass
+
 botStartTime = time.time()
-ppath = "plugins/*.py"
-files = glob.glob(ppath)
+
+def get_plugins_names(plugins_dir="plugins"):
+    plugins_path = Path(plugins_dir)
+    if not plugins_path.exists():
+        logger.warning("Plugins directory not found: %s", plugins_path)
+        return []
+
+    return [
+        ".".join(file.relative_to(plugins_path).with_suffix("").parts)
+        for file in sorted(plugins_path.rglob("*.py"))
+        if file.name != "__init__.py"
+    ]
 
 async def dreamxbotz_start():
-    print('\n\nInitalizing DreamxBotz')
+    logger.info('\n\nInitializing DreamxBotz')
+    dreamxbotz.loop = asyncio.get_running_loop()
     await dreamxbotz.start()
     bot_info = await dreamxbotz.get_me()
     dreamxbotz.username = bot_info.username
     await initialize_clients()
-    for name in files:
-        with open(name) as a:
-            patt = Path(a.name)
-            plugin_name = patt.stem.replace(".py", "")
-            plugins_dir = Path(f"plugins/{plugin_name}.py")
-            import_path = "plugins.{}".format(plugin_name)
-            spec = importlib.util.spec_from_file_location(import_path, plugins_dir)
-            load = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(load)
-            sys.modules["plugins." + plugin_name] = load
-            print("DreamxBotz Imported => " + plugin_name)
+    plugins_names = get_plugins_names()
+    if plugins_names:
+        logger.info("Plugins Loaded: %d plugins found.", len(plugins_names))
+    else:
+        logger.warning("No plugins found.")
+
     if ON_HEROKU:
-        asyncio.create_task(ping_server()) 
+        asyncio.create_task(ping_server())
     b_users, b_chats = await db.get_banned()
-    temp.BANNED_USERS = b_users
-    temp.BANNED_CHATS = b_chats
+    temp.BANNED_USERS = set(b_users)
+    temp.BANNED_CHATS = set(b_chats)
     await Media.ensure_indexes()
-    await db.ensure_update_channel_indexes()
     if MULTIPLE_DB:
         await Media2.ensure_indexes()
-        print("Multiple Database Mode On. Now Files Will Be Save In Second DB If First DB Is Full")
+        logger.info("Multiple Database Mode On. Now Files Will Be Save In Second DB If First DB Is Full")
     else:
-        print("Single DB Mode On ! Files Will Be Save In First Database")
-    me = await dreamxbotz.get_me()
+        logger.info("Single DB Mode On ! Files Will Be Save In First Database")
+    
+    me = bot_info
     temp.ME = me.id
     temp.U_NAME = me.username
     temp.B_NAME = me.first_name
     temp.B_LINK = me.mention
     dreamxbotz.username = '@' + me.username
-    if not await db.get_bot_setting(me.id, 'UPDATE_CHANNELS_MIGRATED', False):
-        if MOVIE_UPDATE_CHANNEL and str(MOVIE_UPDATE_CHANNEL) != "-100" and abs(MOVIE_UPDATE_CHANNEL) > 1000:
-            try:
-                ch = await dreamxbotz.get_chat(MOVIE_UPDATE_CHANNEL)
-                await db.add_update_channel(MOVIE_UPDATE_CHANNEL, ch.title or "")
-            except Exception as e:
-                logging.warning(f"Skipping initial MOVIE_UPDATE_CHANNEL migration ({MOVIE_UPDATE_CHANNEL}): {e}")
-        await db.update_bot_setting(me.id, 'UPDATE_CHANNELS_MIGRATED', True)
-    dreamxbotz.loop.create_task(check_expired_premium(dreamxbotz))
-    logging.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
-    logging.info(LOG_STR)
-    logging.info(script.LOGO)
-    tz = pytz.timezone('Asia/Kolkata')
+    asyncio.create_task(check_expired_premium(dreamxbotz))
+    
+    logger.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
+    logger.info(LOG_STR)
+    logger.info(script.LOGO)
     today = date.today()
-    now = datetime.now(tz)
-    time = now.strftime("%H:%M:%S %p")
-    await dreamxbotz.send_message(chat_id=LOG_CHANNEL, text=script.RESTART_TXT.format(temp.B_LINK, today, time))
+    now = datetime.now(TZ)
+    current_time = now.strftime("%I:%M:%S %p")
+    await dreamxbotz.send_message(chat_id=LOG_CHANNEL, text=script.RESTART_TXT.format(temp.B_LINK, today, current_time, TIMEZONE))
     app = web.AppRunner(await web_server())
     await app.setup()
     bind_address = "0.0.0.0"
     await web.TCPSite(app, bind_address, PORT).start()
-    dreamxbotz.loop.create_task(keep_alive())
-    await idle()
-    
+    asyncio.create_task(keep_alive())
+
+    try:
+        await idle()
+    finally:
+        await app.cleanup()
+        await dreamxbotz.stop()
+
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    while True:
-        try:
-            loop.run_until_complete(dreamxbotz_start())
-            break  
-        except FloodWait as e:
-            print(f"FloodWait! Sleeping for {e.value} seconds.")
-            time.sleep(e.value) 
-        except KeyboardInterrupt:
-            logging.info('Service Stopped Bye 👋')
-            break
+    try:
+        logger.info('Service started...')
+        asyncio.run(dreamxbotz_start())
+    except FloodWait as e:
+        logger.info(f"FloodWait! Sleeping for {e.value} seconds then restarting...")
+        time.sleep(e.value)
+        asyncio.run(dreamxbotz_start())
+    except KeyboardInterrupt:
+        logger.info('Service stopped. Bye.')
