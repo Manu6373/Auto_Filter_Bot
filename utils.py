@@ -27,7 +27,7 @@ def get_random_mix_id():
 _CLEAN_FILENAME_PREFIXES = ('[', '@', 'www.')
 _UNWANTED_BAD_WORDS = {word.lower() for word in BAD_WORDS}
 _PHRASES_SPLIT_REGEX = re.compile(r'\s{2,}')
-_LANG_REGEX = re.compile(r'\b(hin(di)?|eng(lish)?|mal(ayalam)?|tam(il)?|tel(ugu)?|kan(nada)?|ben(gali)?|mar(athi)?|urdu|guj(arat)?|punj(abi)?)\b', re.IGNORECASE)
+_LANG_REGEX = re.compile(r'\b(hin(di)?|eng(lish)?|mal(ayalam)?|tam(il)?|tel(ugu)?|kan(nada)?|ben(gali)?|mar(athi)?|urdu|guj(arat)?|pun(j(abi)?)?)\b', re.IGNORECASE)
 _SEASON_REGEX = re.compile(r's(eason)?\s*0*\d+', re.IGNORECASE)
 _QUALITY_REGEX = re.compile(r'\b(360p|480p|720p|1080p|1440p|2160p|4k)\b', re.IGNORECASE)
 _MULTI_SPACE_REGEX = re.compile(r'\s+')
@@ -67,6 +67,7 @@ class temp(object):
     TEMP_INVITE_LINKS = LimitedDict(maxsize=200)
     REQ_LINKS = LimitedDict(maxsize=200)
     FSUB_CACHE = LimitedDict(maxsize=2000)
+    GETFILE = LimitedDict(maxsize=200)
 
 
 async def is_req_subscribed(client, user_id, rqfsub_channels):
@@ -167,7 +168,7 @@ async def is_check_admin(client, chat_id, user_id):
         return member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
     except Exception:
         return False
-    
+      
 async def users_broadcast(user_id, message, is_pin):
     try:
         m = await message.copy(chat_id=user_id)
@@ -490,7 +491,7 @@ def extract_request_content(message_text):
     return message_text.strip()
 
 def generate_settings_text(settings, title, reset_done=False):
-    note = "\n<b>📌 ɴᴏᴛᴇ :- ʀᴇꜱᴇᴛ ꜱᴜᴄᴄᴇꜱꜱғᴜʟʟʏ ✅</b>" if reset_done else ""
+    note = "\n<b>📌 ɴᴏᴛᴇ :- ʀᴇꜱᴇᴛ ꜱᴜᴄᴄᴇꜱꜱғᴜʟ ✅</b>" if reset_done else ""
     return f"""<b>⚙️ ʏᴏᴜʀ sᴇᴛᴛɪɴɢs ꜰᴏʀ - {title}</b>
 
 ✅️ <b><u>1sᴛ ᴠᴇʀɪꜰʏ sʜᴏʀᴛɴᴇʀ</u></b>
@@ -639,7 +640,6 @@ def get_time(seconds):
             result += f'{int(period_value)}{period_name}'
     return result
     
-
 def get_readable_time(seconds):
     periods = [('d', 86400), ('h', 3600), ('m', 60), ('s', 1)]
     result = []
