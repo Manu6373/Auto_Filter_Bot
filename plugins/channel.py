@@ -3,6 +3,7 @@ import logging
 import asyncio
 from datetime import datetime
 from collections import defaultdict
+from urllib.parse import quote
 from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details
 from database.users_chats_db import db
 from pyrogram import Client, filters, enums
@@ -364,7 +365,7 @@ async def send_movie_update(client, base_name):
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
                     'ɢᴇᴛ ғɪʟᴇs',
-                    url=f"https://t.me/{temp.U_NAME}?start=getfile-{base_name.replace(' ', '-')}"
+                    url=f"https://t.me/{temp.U_NAME}?start=getfile-{quote(base_name, safe='')}"
                 )
             ]])
             size=(2560, 1440) if LANDSCAPE_POSTER and TMDB_POSTER and movie_doc.get("is_backdrop") and not movie_doc.get("error_tmdb") else (853, 1280)
@@ -425,7 +426,7 @@ async def update_movie_message(client, base_name):
         buttons = InlineKeyboardMarkup([[
             InlineKeyboardButton(
                 'ɢᴇᴛ ғɪʟᴇs',
-                url=f"https://t.me/{temp.U_NAME}?start=getfile-{base_name.replace(' ', '-')}"
+                url=f"https://t.me/{temp.U_NAME}?start=getfile-{quote(base_name, safe='')}"
             )
         ]])
 
@@ -565,4 +566,4 @@ def generate_movie_message(movie_doc, base_name):
         episodes=epi_block,
         rating=rating_text,
         search_link=temp.B_LINK
-            )
+)
