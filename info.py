@@ -1,6 +1,7 @@
 import re
 import os
 from os import environ, getenv
+from zoneinfo import ZoneInfo
 from Script import script
 
 # Utility functions
@@ -13,6 +14,19 @@ def is_enabled(value, default):
         return False
     else:
         return default
+
+# ============================
+# Timezone / Restored Settings
+# ============================
+TIMEZONE = environ.get('TIMEZONE', 'Asia/Kolkata')
+TZ = ZoneInfo(TIMEZONE)
+
+PICS_URL = (environ.get('PICS_URL', 'https://graph.org/file/56b5deb73f3b132e2bb73.jpg')).split()
+
+COVERX = is_enabled(environ.get('COVERX', 'False'), False)
+ULTRA_FAST_MODE = is_enabled(environ.get('ULTRA_FAST_MODE', 'False'), False)
+TMDB_ON_SEARCH = is_enabled(environ.get('TMDB_ON_SEARCH', 'False'), False)
+MAINTENANCE = is_enabled(environ.get('MAINTENANCE', 'False'), False)
 
 # ============================
 # Bot Information Configuration
@@ -95,7 +109,7 @@ LANDSCAPE_POSTER = is_enabled(environ.get('LANDSCAPE_POSTER', 'True'), True) # S
 # ============================
 # Verification Settings
 # ============================
-IS_VERIFY = is_enabled('IS_VERIFY', True)  # Verification On (True) / Off (False)
+IS_VERIFY = is_enabled(environ.get('IS_VERIFY', 'True'), True)  # Verification On (True) / Off (False)
 LOG_VR_CHANNEL = int(environ.get('LOG_VR_CHANNEL', '-1003038373976')) #Verification Channel Id 
 LOG_API_CHANNEL = int(environ.get('LOG_API_CHANNEL', '-1002737688783')) #If Anyone Set Your Bot In Any Group And Set Shortner In That Group Then In This Channel The All Details Come
 VERIFY_IMG = environ.get("VERIFY_IMG", "https://telegra.ph/file/9ecc5d6e4df5b83424896.jpg")
@@ -244,7 +258,7 @@ REACTIONS = ["🤝", "😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "�
 Bot_cmds = {
     "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ",
     "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs",
-    "alive": " Cʜᴇᴄᴋ Bᴏᴛ Aʟɪᴠᴇ ᴏʀ Nᴏᴛ ",
+    "alive": " Cʜᴇᴄᴋ Bᴏᴛ Aʟɪᴠᴇ Oʀ Nᴏᴛ ",
     "settings": "ᴄʜᴀɴɢᴇ sᴇᴛᴛɪɴɢs",
     "id": "ɢᴇᴛ ɪᴅ ᴛᴇʟᴇɢʀᴀᴍ ",
     "info": "Gᴇᴛ Usᴇʀ ɪɴғᴏ ",
